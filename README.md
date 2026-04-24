@@ -1,7 +1,5 @@
 # MusiCode
 
-[Try it now!](https://hlorenzi.github.io/musicode/)
-
 This is a tool for composing or analyzing music via
 a new domain-specific markup language.
 
