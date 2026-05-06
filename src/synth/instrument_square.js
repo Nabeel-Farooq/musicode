@@ -1,32 +1,50 @@
-var InstrumentSquareWave = {};
+const InstrumentSquareWave = {
+  generate(time, timeReleased, midiPitch) {
+    const frequency = this.midiToFreq(midiPitch);
+    const envelope = this.getEnvelope(time, timeReleased);
 
+    if (envelope <= 0) return null;
 
-InstrumentSquareWave.generate = function(time, timeReleased, midiPitch)
-{
-	var envelope = 1;
-	
-	if (time < 0.1)
-		envelope = Math.max(1, 1.75 - time / 0.2);
-	else
-		envelope = Math.max(0.5, 1 - time / 0.5);
-	
-	if (timeReleased > 0)
-		envelope *= Math.max(0, 1 - timeReleased / 0.1);
-	
-	
-	if (envelope == 0)
-		return null;
-	
-	return [
-		[1,  envelope * 1/1],
-		[3,  envelope * 1/3],
-		[5,  envelope * 1/5],
-		[7,  envelope * 1/7],
-		[9,  envelope * 1/9],
-		[11, envelope * 1/11],
-		[13, envelope * 1/13],
-		[15, envelope * 1/15],
-		[17, envelope * 1/17],
-		[19, envelope * 1/19]
-	];
-}
+    return this.getHarmonics(frequency, envelope);
+  },
+
+  midiToFreq(midi) {
+    return 440 * Math.pow(2, (midi - 69) / 12);
+  },
+
+  getEnvelope(time, timeReleased) {
+    let env;
+
+    // Attack (fast, clean)
+    if (time < 0.01) {
+      env = time / 0.01;
+    } 
+    // Sustain (flat-ish, like classic square synth)
+    else {
+      env = 1;
+    }
+
+    // Release (quick cutoff typical of square leads)
+    if (timeReleased > 0) {
+      env *= Math.exp(-15 * timeReleased);
+    }
+
+    return Math.max(0, env);
+  },
+
+  getHarmonics(baseFreq, envelope) {
+    const harmonics = [];
+    const maxHarmonics = 10;
+
+    for (let i = 0; i < maxHarmonics; i++) {
+      const n = 2 * i + 1; // odd harmonics only
+
+      const freq = baseFreq * n;
+      const amp = envelope * (1 / n);
+
+      harmonics.push([freq / 440, amp]);
+    }
+
+    return harmonics;
+  }
+};
