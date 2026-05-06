@@ -1,279 +1,190 @@
-function CompilerReader(src)
-{
-	this.src = src;
-	this.end = src.length;
-	this.index = 0;
-	this.line = 0;
-	this.column = 0;
-}
+class CompilerReader {
+  constructor(src, start = 0, end = null, line = 0, column = 0) {
+    this.src = src;
+    this.index = start;
+    this.end = end ?? src.length;
+    this.line = line;
+    this.column = column;
+  }
 
+  makeLineReader() {
+    const start = this.index;
+    const line = this.line;
+    const column = this.column;
 
-CompilerReader.prototype.makeLineReader = function()
-{
-	var start = this.index;
-	var line = this.line;
-	var column = this.column;
-	var end = this.index;
-	
-	while (this.index < this.end)
-	{
-		this.advance();
-		end += 1;
-		
-		if (this.src[this.index - 1] == '\n')
-		{
-			end -= 1;
-			break;
-		}
-	}
-	
-	var lineReader = new CompilerReader(this.src);
-	lineReader.end = end;
-	lineReader.index = start;
-	lineReader.line = line;
-	lineReader.column = column;
-	return lineReader;
-}
+    let end = start;
 
+    while (this.index < this.end) {
+      const ch = this.currentChar();
+      this.advance();
+      end++;
 
-CompilerReader.prototype.makeError = function(description)
-{
-	return {
-		description: description,
-		start: this.index,
-		end: this.index,
-		lineStart: this.line,
-		lineEnd: this.line,
-		columnStart: this.column,
-		columnEnd: this.column
-	};
-}
+      if (ch === '\n') {
+        end--; // exclude newline
+        break;
+      }
+    }
 
+    return new CompilerReader(this.src, start, end, line, column);
+  }
 
-CompilerReader.prototype.isOver = function()
-{
-	return this.index >= this.end;
-}
+  makeError(description) {
+    return {
+      description,
+      start: this.index,
+      end: this.index,
+      lineStart: this.line,
+      lineEnd: this.line,
+      columnStart: this.column,
+      columnEnd: this.column
+    };
+  }
 
+  isOver() {
+    return this.index >= this.end;
+  }
 
-CompilerReader.prototype.advance = function()
-{
-	if (this.index < this.end)
-	{
-		if (this.currentChar() == '\n')
-		{
-			this.line += 1;
-			this.column = 0;
-		}
-		else
-			this.column += 1;
-		
-		this.index += 1;
-	}
-}
+  currentChar() {
+    return this.index < this.end ? this.src[this.index] : '\0';
+  }
 
+  nextCharBy(offset) {
+    const i = this.index + offset;
+    return i < this.end ? this.src[i] : '\0';
+  }
 
-CompilerReader.prototype.skipWhitespace = function()
-{
-	while (this.index < this.end)
-	{
-		// Skip comments.
-		if (this.nextCharBy(0) == '/' && this.nextCharBy(1) == '/')
-		{
-			this.advance();
-			this.advance();
-			
-			while (this.index < this.end)
-			{
-				if (this.currentChar() == '\n')
-					break;
-				
-				this.advance();
-			}
-		}
-		
-		else if (!this.charIsWhitespace(this.currentChar()))
-			break;
-		
-		else
-			this.advance();
-	}
-}
+  advance() {
+    if (this.isOver()) return;
 
+    const ch = this.src[this.index++];
+    if (ch === '\n') {
+      this.line++;
+      this.column = 0;
+    } else {
+      this.column++;
+    }
+  }
 
-CompilerReader.prototype.currentChar = function()
-{
-	if (this.index < this.end)
-		return this.src[this.index];
-	else
-		return '\0';
-}
+  skipWhitespace() {
+    while (!this.isOver()) {
+      // Skip comments
+      if (this.nextCharBy(0) === '/' && this.nextCharBy(1) === '/') {
+        this.advance();
+        this.advance();
 
+        while (!this.isOver() && this.currentChar() !== '\n') {
+          this.advance();
+        }
+      }
+      else if (!this.charIsWhitespace(this.currentChar())) {
+        break;
+      }
+      else {
+        this.advance();
+      }
+    }
+  }
 
-CompilerReader.prototype.nextCharBy = function(amount)
-{
-	if (this.index + amount < this.end)
-		return this.src[this.index + amount];
-	else
-		return '\0';
-}
+  match(char, errMsg = null) {
+    if (this.currentChar() === char) {
+      this.advance();
+      return true;
+    }
 
+    if (errMsg) throw this.makeError(errMsg);
+    return false;
+  }
 
-CompilerReader.prototype.match = function(c, errMsg = null)
-{
-	if (this.currentChar() == c)
-	{
-		this.advance();
-		return true;
-	}
-	
-	if (errMsg == null)
-		return false;
-	
-	throw this.makeError(errMsg);
-}
+  readWhile(errMsg, isStart, isValid) {
+    const ch = this.currentChar();
+    if (!isStart.call(this, ch)) {
+      if (errMsg) throw this.makeError(errMsg);
+      return null;
+    }
 
+    const start = this.index;
 
-CompilerReader.prototype.readWhile = function(errMsg, fnStart, fnMiddle)
-{
-	if (fnStart(this.currentChar()))
-	{
-		var string = "";
-		while (fnMiddle(this.currentChar()))
-		{
-			string += this.currentChar();
-			this.advance();
-		}
-		
-		return string;
-	}
-	
-	if (errMsg == null)
-		return null;
-	
-	throw this.makeError(errMsg);
-}
+    while (!this.isOver() && isValid.call(this, this.currentChar())) {
+      this.advance();
+    }
 
+    return this.src.slice(start, this.index); // 🔥 faster than +=
+  }
 
-CompilerReader.prototype.readString = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsStringStart, this.charIsString);
-}
+  readString(errMsg) {
+    return this.readWhile(errMsg, this.charIsStringStart, this.charIsString);
+  }
 
+  readText(errMsg) {
+    return this.readWhile(errMsg, this.charIsText, this.charIsText);
+  }
 
-CompilerReader.prototype.readText = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsText, this.charIsText);
-}
+  readInteger(errMsg) {
+    return this.readWhile(errMsg, this.charIsNumber, this.charIsNumber);
+  }
 
+  readAbsolutePitchName(errMsg) {
+    return this.readWhile(errMsg, this.charIsAbsolutePitchName, this.charIsAbsolutePitchName);
+  }
 
-CompilerReader.prototype.readInteger = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsNumber, this.charIsNumber);
-}
+  readNoteName(errMsg) {
+    return this.readWhile(errMsg, this.charIsNoteName, this.charIsNoteName);
+  }
 
+  readChordName(errMsg) {
+    return this.readWhile(errMsg, this.charIsChordName, this.charIsChordName);
+  }
 
-CompilerReader.prototype.readAbsolutePitchName = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsAbsolutePitchName, this.charIsAbsolutePitchName);
-}
+  readChordKindName(errMsg) {
+    return this.readWhile(errMsg, this.charIsChordKindName, this.charIsChordKindName);
+  }
 
+  // ---------- Character helpers ----------
 
-CompilerReader.prototype.readNoteName = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsNoteName, this.charIsNoteName);
-}
+  charIsWhitespace(c) {
+    return c === ' ' || c === '\t' || c === '\n' || c === '\r';
+  }
 
+  charIsStringStart(c) {
+    return this.isAlpha(c) || c === '_';
+  }
 
-CompilerReader.prototype.readChordName = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsChordName, this.charIsChordName);
-}
+  charIsString(c) {
+    return this.isAlphaNumeric(c) || c === '_';
+  }
 
+  charIsText(c) {
+    return this.isAlpha(c) || c === '_';
+  }
 
-CompilerReader.prototype.readChordKindName = function(errMsg = null)
-{
-	return this.readWhile(errMsg, this.charIsChordKindName, this.charIsChordKindName);
-}
+  charIsNumber(c) {
+    return c >= '0' && c <= '9';
+  }
 
+  charIsAbsolutePitchName(c) {
+    return (c >= 'A' && c <= 'G') || (c >= 'a' && c <= 'g') || c === '#';
+  }
 
-CompilerReader.prototype.charIsWhitespace = function(c)
-{
-	return (
-		(c == ' ' || c == '\t' ||
-		c == '\n' || c == '\r'));
-}
+  charIsNoteName(c) {
+    return this.charIsAbsolutePitchName(c) || (c >= '1' && c <= '7');
+  }
 
+  charIsChordName(c) {
+    return this.charIsAbsolutePitchName(c) ||
+           'IViv'.includes(c);
+  }
 
-CompilerReader.prototype.charIsStringStart = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'Z') ||
-		(c >= 'a' && c <= 'z') ||
-		c == '_');
-}
+  charIsChordKindName(c) {
+    return this.isAlphaNumeric(c) || c === '+' || c === '%';
+  }
 
+  // ---------- Small helpers ----------
 
-CompilerReader.prototype.charIsString = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'Z') ||
-		(c >= 'a' && c <= 'z') ||
-		(c >= '0' && c <= '9') ||
-		c == '_');
-}
+  isAlpha(c) {
+    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+  }
 
-
-CompilerReader.prototype.charIsText = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'Z') ||
-		(c >= 'a' && c <= 'z') ||
-		c == '_');
-}
-
-
-CompilerReader.prototype.charIsNumber = function(c)
-{
-	return (c >= '0' && c <= '9');
-}
-
-
-CompilerReader.prototype.charIsAbsolutePitchName = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'G') ||
-		(c >= 'a' && c <= 'g') ||
-		c == '#');
-}
-
-
-CompilerReader.prototype.charIsNoteName = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'G') ||
-		(c >= 'a' && c <= 'g') ||
-		(c >= '1' && c <= '7') ||
-		c == '#');
-}
-
-
-CompilerReader.prototype.charIsChordName = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'G') ||
-		(c >= 'a' && c <= 'g') ||
-		c == 'I' || c == 'i' ||
-		c == 'V' || c == 'v' ||
-		c == '#');
-}
-
-
-CompilerReader.prototype.charIsChordKindName = function(c)
-{
-	return (
-		(c >= 'A' && c <= 'Z') ||
-		(c >= 'a' && c <= 'z') ||
-		(c >= '1' && c <= '9') ||
-		c == '+' || c == '%');
+  isAlphaNumeric(c) {
+    return this.isAlpha(c) || this.charIsNumber(c);
+  }
 }
