@@ -1,20 +1,20 @@
-function snap(x, step)
-{
-	return Math.round(x / step) * step;
-}
+const snap = (x, step) => {
+  if (step === 0) return x; // avoid division by zero
+  return Math.round(x / step) * step;
+};
 
+const mod = (x, m) => {
+  if (m === 0) return NaN;
+  return ((x % m) + m) % m; // always positive modulo
+};
 
-function mod(x, m)
-{
-	return (x % m + m) % m;
-}
+const stretch = (x, pivot, origin, delta) => {
+  const dist = origin - pivot;
 
+  // Prevent division by zero (critical edge case)
+  if (dist === 0) return pivot;
 
-function stretch(x, pivot, origin, delta)
-{
-	var dist = (origin - pivot);
-	var p    = (x      - pivot) / dist;
-	var move = (origin + delta  - pivot) / dist;
-	
-	return Math.round(pivot + dist * (p * move));
-}
+  const scale = (origin + delta - pivot) / dist;
+
+  return Math.round(pivot + (x - pivot) * scale);
+};
