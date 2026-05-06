@@ -1,164 +1,190 @@
-var codeEditor = null;
-var codeEditorLineWidgets = [];
+let codeEditor = null;
+let codeEditorLineWidgets = [];
 
-var viewer = null;
-var song = null;
-var synth = null;
+let viewer = null;
+let song = null;
+let synth = null;
 
-var songPlaying = false;
+let isPlaying = false;
 
+function main() {
+  const svgViewerEl = document.getElementById("svgViewer");
+  viewer = new Viewer(svgViewerEl);
 
-function main()
-{
-	var elemSvgViewer = document.getElementById("svgViewer");
-	viewer = new Viewer(elemSvgViewer);
-	window.onresize = function() { viewer.refresh(); };
-	window.onkeydown = function(ev) { onKeyDown(ev); };
-	
-	synth = new Synth();
-	
-	var elemDivCodeEditor = document.getElementById("divCode");
-	codeEditor = CodeMirror(elemDivCodeEditor,
-	{
-		lineNumbers: true
-	});
-	
-	codeEditor.setSize("100%", "100%");
-	codeEditor.on("change", function() { compile(); });
-	
-	codeEditor.setValue(
-		"@key c4\n" +
-		"@meter 4/4\n" +
-		"@tempo 120\n\n\n" +
-		
-		"// tuplets and anacrusis\n" +
-		"0| :4:3 < a a# b ||\n\n\n" +
-		
-		"// each group of lines defines a segment of music,\n" +
-		"// usually one or more complete measures\n" +
-		"0| c d e f |\n" +
-		"h| I-- vim-- |\n\n\n" +
-		
-		"// rests and different durations\n" +
-		"0| g-- _- a. a#, b, |\n" +
-		"h| V7---- |\n\n\n" +
-		
-		"// simultaneous notes\n" +
-		"0| :1 > c     |\n" +
-		"0| :1   g     |\n" +
-		"0| :1   d     |\n" +
-		"h| :1   Isus2 |\n\n\n" +
-		
-		"// note extensions from previous measure\n" +
-		"// (works with simultaneous tracks)\n" +
-		"0| ---- |\n" +
-		"0| -- _-- |\n" +
-		"0| e---- |\n" +
-		"h| I---- |\n\n\n" +
-		
-		"// meter changes\n" +
-		"@meter 11/8\n\n" +
-		
-		"0| > c# c c# c c# c c# c c# c c# |\n" +
-		"h|   io7----------- |\n\n\n" +
-		
-		"// key changes\n" +
-		"@key e5\n\n" +
-		
-		"0| e-- g#-- < b g# b c---- |\n" +
-		"h| I------- bVI---- |\n\n\n" +
-		
-		"@key c5\n" +
-		"@meter 5/4\n\n" +
-		
-		"0| < b ----- |\n" +
-		"h|   V7----- |\n\n" +
-		
-		"0| c----- |\n" +
-		"h| I----- |");
-		
-	codeEditor.focus();
+  window.addEventListener("resize", () => viewer.refresh());
+  window.addEventListener("keydown", handleKeyDown);
+
+  synth = new Synth();
+
+  const codeContainer = document.getElementById("divCode");
+  codeEditor = CodeMirror(codeContainer, {
+    lineNumbers: true,
+  });
+
+  codeEditor.setSize("100%", "100%");
+  codeEditor.on("change", compile);
+
+  codeEditor.setValue(getDefaultCode());
+  codeEditor.focus();
 }
 
+function getDefaultCode() {
+  return `@key c4
+@meter 4/4
+@tempo 120
 
-function compile()
-{
-	for (var i = 0; i < codeEditorLineWidgets.length; i++)
-		codeEditorLineWidgets[i].clear();
-	
-	codeEditorLineWidgets = [];
-	
-	var msgReporter =
-	{
-		report: function(msg)
-		{
-			var msgDiv = document.createElement("div");
-			var msgIcon = msgDiv.appendChild(document.createElement("span"));
-			msgIcon.innerHTML = "×";
-			msgIcon.className = "codeEditorErrorIcon";
-			msgDiv.appendChild(document.createTextNode(msg.description));
-			msgDiv.className = "codeEditorErrorText";
-			
-			codeEditorLineWidgets.push(
-				codeEditor.addLineWidget(msg.lineStart, msgDiv, { coverGutter: false, noHScroll: true }));
-		}
-	};
-	
-	var parser = new CompilerParser(codeEditor.getValue(), msgReporter);
-	song = parser.parse();
-	
-	if (!songPlaying)
-		viewer.setSong(song);
+
+// tuplets and anacrusis
+0| :4:3 < a a# b ||
+
+
+// each group of lines defines a segment of music,
+// usually one or more complete measures
+0| c d e f |
+h| I-- vim-- |
+
+
+// rests and different durations
+0| g-- _- a. a#, b, |
+h| V7---- |
+
+
+// simultaneous notes
+0| :1 > c     |
+0| :1   g     |
+0| :1   d     |
+h| :1   Isus2 |
+
+
+// note extensions from previous measure
+// (works with simultaneous tracks)
+0| ---- |
+0| -- _-- |
+0| e---- |
+h| I---- |
+
+
+// meter changes
+@meter 11/8
+
+0| > c# c c# c c# c c# c c# c c# |
+h|   io7----------- |
+
+
+// key changes
+@key e5
+
+0| e-- g#-- < b g# b c---- |
+h| I------- bVI---- |
+
+
+@key c5
+@meter 5/4
+
+0| < b ----- |
+h|   V7----- |
+
+0| c----- |
+h| I----- |`;
 }
 
+function compile() {
+  clearEditorErrors();
 
-function togglePlay()
-{
-	songPlaying = !songPlaying;
-	
-	if (songPlaying)
-	{
-		synth.clear();
-		
-		if (song != null)
-			song.feedSynth(synth, viewer.cursorTick);
-		
-		viewer.setCursorPlayback(viewer.cursorTick);
-		var startTick = viewer.cursorTick.clone();
-		
-		synth.play(function(time)
-		{
-			// TODO: This doesn't belong here.
-			
-			// NOTE: Watch out for fixed song tempo,
-			// if that changes in the future.
-			
-			// Convert time in seconds to ticks.
-			var percentageOfWholeNote = time / (1000 / song.bpm / 4);
-			var tick = Rational.fromFloat(percentageOfWholeNote, new Rational(0, 1, 64));
-			tick.add(startTick);
-			
-			viewer.setCursorPlayback(tick);
-			
-			if (tick.compare(song.length) >= 0)
-				togglePlay();
-		});
-	}
-	else
-	{
-		synth.clear();
-		synth.stop();
-		viewer.hideCursorPlayback();
-		viewer.setSong(song);
-	}
+  const reporter = createMessageReporter();
+  const parser = new CompilerParser(codeEditor.getValue(), reporter);
+
+  song = parser.parse();
+
+  if (!isPlaying) {
+    viewer.setSong(song);
+  }
 }
 
+function clearEditorErrors() {
+  codeEditorLineWidgets.forEach(widget => widget.clear());
+  codeEditorLineWidgets = [];
+}
 
-function onKeyDown(ev)
-{
-	if (ev.ctrlKey && ev.keyCode == 32)
-	{
-		ev.preventDefault();
-		togglePlay();
-	}
+function createMessageReporter() {
+  return {
+    report(msg) {
+      const container = document.createElement("div");
+
+      const icon = document.createElement("span");
+      icon.textContent = "×";
+      icon.className = "codeEditorErrorIcon";
+
+      const text = document.createTextNode(msg.description);
+
+      container.append(icon, text);
+      container.className = "codeEditorErrorText";
+
+      const widget = codeEditor.addLineWidget(msg.lineStart, container, {
+        coverGutter: false,
+        noHScroll: true,
+      });
+
+      codeEditorLineWidgets.push(widget);
+    },
+  };
+}
+
+function togglePlay() {
+  isPlaying = !isPlaying;
+
+  if (isPlaying) {
+    startPlayback();
+  } else {
+    stopPlayback();
+  }
+}
+
+function startPlayback() {
+  synth.clear();
+
+  if (song) {
+    song.feedSynth(synth, viewer.cursorTick);
+  }
+
+  viewer.setCursorPlayback(viewer.cursorTick);
+  const startTick = viewer.cursorTick.clone();
+
+  synth.play((time) => {
+    const tick = getTickFromTime(time, startTick);
+
+    viewer.setCursorPlayback(tick);
+
+    if (tick.compare(song.length) >= 0) {
+      togglePlay();
+    }
+  });
+}
+
+function stopPlayback() {
+  synth.clear();
+  synth.stop();
+
+  viewer.hideCursorPlayback();
+  viewer.setSong(song);
+}
+
+function getTickFromTime(time, startTick) {
+  const wholeNoteDuration = 1000 / song.bpm / 4;
+  const percentage = time / wholeNoteDuration;
+
+  const tick = Rational.fromFloat(
+    percentage,
+    new Rational(0, 1, 64)
+  );
+
+  tick.add(startTick);
+  return tick;
+}
+
+function handleKeyDown(ev) {
+  if (ev.ctrlKey && ev.key === " ") {
+    ev.preventDefault();
+    togglePlay();
+  }
 }
